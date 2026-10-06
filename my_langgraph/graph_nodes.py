@@ -9,23 +9,21 @@ from tools.tools import tools_by_name
 
 
 # 系统进入节点，在用户输入前给一个系统消息
-def sys_in_node(state: YourAgentState) -> MessagesState:
+def sys_in_node(state: YourAgentState) -> YourAgentState:
     sysMsg = SystemMessage(content="你是一个数字计算小能手")
-    # intputStr = state["intputStr"]
     interruptResult = interrupt("please enter your input：")
-    state["intputStr"] = interruptResult
     humanMsg = HumanMessage(content=interruptResult)
-    return MessagesState(messages=[sysMsg] + [humanMsg])
+    return YourAgentState(messages=[sysMsg] + [humanMsg],intputStr=interruptResult)
 
 # 大模型请求节点
-def llm_node(state: YourAgentState, config: RunnableConfig) -> MessagesState:
+def llm_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
     agentModel = config["configurable"]["agent_model"]
     llmRes =agentModel.llmWithTools.invoke(state["messages"])
     # print(f'llm_node llmRes:{llmRes}')
     return MessagesState(messages=[llmRes])
 
 # 工具执行节点
-def tool_node(state: MessagesState) -> MessagesState:
+def tool_node(state: YourAgentState) -> YourAgentState:
     # print(f'tool_node state:{state}')
     last_msg = state["messages"][-1]
     if len(last_msg.tool_calls) == 0 :
@@ -48,7 +46,7 @@ def tool_node(state: MessagesState) -> MessagesState:
     return MessagesState(messages=toolRes)
 
 # 系统输出节点
-def sys_out_node(state: MessagesState) -> YourAgentState:
+def sys_out_node(state: YourAgentState) -> YourAgentState:
     last_content = state["messages"][-1].content
     print(f'【Agent】：{last_content}')
     endState = YourAgentState(outPutStr=last_content)

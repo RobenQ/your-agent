@@ -8,7 +8,7 @@ if __name__ == '__main__':
 
     # 初始化agent
     yourAgent = YourAgent(agentConfig)
-    sessionId = "1419_6"
+    sessionId = "1419_7"
 
     # 运行agent
     yourAgent.run(sessionId=sessionId)

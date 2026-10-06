@@ -38,7 +38,14 @@ class YourAgent:
             "thread_id": sessionId,
             "agent_model": self.config.model,
         })
-        result = self.stateGraph.invoke(YourAgentState(), config=config)
+        # 上次执行结束如果是异常结束，此次重新执行异常节点（重放），如果是正常结束，则重更新执行
+        errEnd = self.__checkIfErrEnd(config)
+        initState = None
+        if errEnd:
+            config = self.__getLastestNodeConfig(config)
+        else:
+            initState = YourAgentState(intputStr="", outPutStr="")
+        result = self.stateGraph.invoke(initState, config=config)
         while "__interrupt__" in result:
             interruptObj = result["__interrupt__"][0]
             approveResult = interruptObj.value
@@ -57,6 +64,34 @@ class YourAgent:
         })
         result = self.stateGraph.invoke(Command(resume=resumeResult), config=config)
         return result
+
+    def __checkIfErrEnd(self, config: RunnableConfig) -> bool:
+        """
+        检查当前会话上一次执行是否是因为崩溃结束
+        """
+        if self.__isNewSession(config):
+            return False
+        state = self.stateGraph.get_state(config)
+        if not state.next:
+            # next 为空，可能是正常结束，也可能是崩溃
+            for task in state.tasks:
+                if task.error:
+                    return True
+            return False
+
+        return True
+
+    def __isNewSession(self, config: RunnableConfig):
+        """
+        判断是否是新的会话
+        """
+        checkpoint_tuple = self.stateGraph.checkpointer.get_tuple(config=config)
+        return checkpoint_tuple is None
+
+    def __getLastestNodeConfig(self, config: RunnableConfig) -> RunnableConfig:
+        history = list(self.stateGraph.get_state_history(config))
+        prev = history[1]
+        return prev.config
 
     def close(self):
         """
