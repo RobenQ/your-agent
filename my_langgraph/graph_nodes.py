@@ -11,9 +11,10 @@ from tools.tools import tools_by_name
 # 系统进入节点，在用户输入前给一个系统消息
 def sys_in_node(state: YourAgentState) -> MessagesState:
     sysMsg = SystemMessage(content="你是一个数字计算小能手")
-    intputStr = state["intputStr"]
-    print(f'【You】：{intputStr}')
-    humanMsg = HumanMessage(content=intputStr)
+    # intputStr = state["intputStr"]
+    interruptResult = interrupt("please enter your input：")
+    state["intputStr"] = interruptResult
+    humanMsg = HumanMessage(content=interruptResult)
     return MessagesState(messages=[sysMsg] + [humanMsg])
 
 # 大模型请求节点
@@ -30,11 +31,12 @@ def tool_node(state: MessagesState) -> MessagesState:
     if len(last_msg.tool_calls) == 0 :
         # print("不需要工具调用")
         return state
+    tool_names = [call["name"] for call in last_msg.tool_calls]
+    interruptResult = interrupt(f'【Agent】:I will call the tool {tool_names} ，continue？【y/n】：')
     toolRes = []
     # print(f'需要调用的工具列表：{last_msg.tool_calls}')
     for call in last_msg.tool_calls:
         toolName = call["name"]
-        interruptResult = interrupt("【Agent】:I will call the tool[" + toolName + "]，continue？【y/n】：")
         # print(f'用户审批结果：{interruptResult}')
         if "n" == str(interruptResult).lower():
             toolRes.append(ToolMessage(content="工具调用未授权", tool_call_id=call["id"]))

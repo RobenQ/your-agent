@@ -11,7 +11,7 @@ if __name__ == '__main__':
     sessionId = "1419_6"
 
     # 运行agent
-    yourAgent.run(sessionId=sessionId, userInput = input("please enter your input："))
+    yourAgent.run(sessionId=sessionId)
 
     # 关闭postgresql线程池
     yourAgent.close()

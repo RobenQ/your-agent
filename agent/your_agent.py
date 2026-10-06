@@ -29,7 +29,7 @@ class YourAgent:
         self.stateGraph = compileGraph(self.connectionPool)
         self.sessionId = ""
 
-    def run(self, sessionId:str, userInput:str) -> str:
+    def run(self, sessionId:str) -> str:
         """
         run agent
         """
@@ -38,7 +38,7 @@ class YourAgent:
             "thread_id": sessionId,
             "agent_model": self.config.model,
         })
-        result = self.stateGraph.invoke(YourAgentState(intputStr=userInput, outPutStr=""), config=config)
+        result = self.stateGraph.invoke(YourAgentState(), config=config)
         while "__interrupt__" in result:
             interruptObj = result["__interrupt__"][0]
             approveResult = interruptObj.value
