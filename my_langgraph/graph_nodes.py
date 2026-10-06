@@ -1,0 +1,54 @@
+from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.graph import MessagesState
+from langgraph.types import interrupt
+
+from llm.deepseek import LLM
+from my_langgraph.graph_state import YourAgentState
+from tools.tools import tools_by_name
+
+
+# 系统进入节点，在用户输入前给一个系统消息
+def sys_in_node(state: YourAgentState) -> MessagesState:
+    sysMsg = SystemMessage(content="你是一个数字计算小能手")
+    intputStr = state["intputStr"]
+    print(f'【You】：{intputStr}')
+    humanMsg = HumanMessage(content=intputStr)
+    return MessagesState(messages=[sysMsg] + [humanMsg])
+
+# 大模型请求节点
+def llm_node(state: YourAgentState, config: RunnableConfig) -> MessagesState:
+    agentModel = config["configurable"]["agent_model"]
+    llmRes =agentModel.llmWithTools.invoke(state["messages"])
+    # print(f'llm_node llmRes:{llmRes}')
+    return MessagesState(messages=[llmRes])
+
+# 工具执行节点
+def tool_node(state: MessagesState) -> MessagesState:
+    # print(f'tool_node state:{state}')
+    last_msg = state["messages"][-1]
+    if len(last_msg.tool_calls) == 0 :
+        # print("不需要工具调用")
+        return state
+    toolRes = []
+    # print(f'需要调用的工具列表：{last_msg.tool_calls}')
+    for call in last_msg.tool_calls:
+        toolName = call["name"]
+        interruptResult = interrupt("【Agent】:I will call the tool[" + toolName + "]，continue？【y/n】：")
+        # print(f'用户审批结果：{interruptResult}')
+        if "n" == str(interruptResult).lower():
+            toolRes.append(ToolMessage(content="工具调用未授权", tool_call_id=call["id"]))
+            continue
+        tool = tools_by_name[toolName]
+        observation = tool.invoke(call["args"])
+        print(f'【Agent】:call the tool：{call["name"]}， result：{observation}')
+        toolRes.append(ToolMessage(content=observation, tool_call_id=call["id"]))
+    return MessagesState(messages=toolRes)
+
+# 系统输出节点
+def sys_out_node(state: MessagesState) -> YourAgentState:
+    last_content = state["messages"][-1].content
+    print(f'【Agent】：{last_content}')
+    endState = YourAgentState(outPutStr=last_content)
+    # print(f'end MessagesState：{endState}')
+    return endState
