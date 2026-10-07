@@ -6,6 +6,7 @@ from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.store.memory import InMemoryStore
+from langgraph.types import RetryPolicy
 from psycopg_pool import ConnectionPool
 
 from my_langgraph.graph_edgeRouter import tool_continue
@@ -17,7 +18,7 @@ def compileGraph(connectionPool:ConnectionPool) -> CompiledStateGraph[Any, Any, 
     graph = StateGraph(YourAgentState)
 
     graph.add_node("sys_in_node", sys_in_node)
-    graph.add_node("llm_node", llm_node)
+    graph.add_node("llm_node", llm_node, retry_policy=RetryPolicy(max_attempts=3))
     graph.add_node("tool_node", tool_node)
     graph.add_node("sys_out_node", sys_out_node)
 
