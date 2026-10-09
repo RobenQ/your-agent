@@ -31,7 +31,7 @@ def divide(a: int, b: int) -> float:
     """
     return a / b
 # 工具集合
-custom_tools = [add, multiply, divide]
+custom_tools = []
 
 # 工具名称的集合
 tools_by_name = {tool.name: tool for tool in custom_tools}

@@ -6,6 +6,7 @@ from langgraph.types import Command
 from psycopg_pool import ConnectionPool
 
 from llm.deepseek import LLM
+from mcp_client.langchain_mcp_client import YourMcpClient
 from my_langgraph.graph_state import YourAgentState
 from my_langgraph.state_graph import compileGraph
 
@@ -14,9 +15,15 @@ class AgentConfig:
     """
     agent config
     """
-    def __init__(self, postgresqlUrl: str, tools: list):
+    def __init__(self, postgresqlUrl: str, tools: list,  mcpServiceConfig: dict):
         self.postgresqlUrl = postgresqlUrl
-        self.tools = tools
+        self.tools = []
+        if tools is not None:
+            self.tools = tools
+        if mcpServiceConfig is not None:
+            remoteTools = YourMcpClient(mcpServiceConfig).getTools()
+            self.tools = self.tools + remoteTools
+        self.toolsByName = {tool.name: tool for tool in self.tools}
         self.model = LLM(tools=self.tools)
 
 class YourAgent:
@@ -36,13 +43,14 @@ class YourAgent:
         self.sessionId = sessionId
         config = RunnableConfig(configurable={
             "thread_id": sessionId,
-            "agent_model": self.config.model,
+            "user_config": self.config,
         })
         # 上次执行结束如果是异常结束，此次重新执行异常节点（重放），如果是正常结束，则重更新执行
         errEnd = self.__checkIfErrEnd(config)
         initState = None
         if errEnd:
             config = self.__getLastestNodeConfig(config)
+            config["configurable"]["user_config"] = self.config
         else:
             initState = YourAgentState(intputStr="", outPutStr="")
         result = self.stateGraph.invoke(initState, config=config)
@@ -60,7 +68,7 @@ class YourAgent:
         """
         config = RunnableConfig(configurable={
             "thread_id": self.sessionId,
-            "agent_model": self.config.model,
+            "user_config": self.config,
         })
         result = self.stateGraph.invoke(Command(resume=resumeResult), config=config)
         return result

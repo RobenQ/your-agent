@@ -4,11 +4,17 @@ from tools import tools
 if __name__ == '__main__':
     # 初始化agent config
     postgresqlUrl = "postgresql://postgres:123456@localhost:5432/langgraph?sslmode=disable"
-    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, tools=tools.custom_tools)
+    mcpServerConfig = {
+        "caculator-mcp-server":{
+            "url": "http://localhost:8080/mcp",
+            "transport": "streamable_http"
+        }
+    }
+    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, tools=tools.custom_tools, mcpServiceConfig=mcpServerConfig)
 
     # 初始化agent
     yourAgent = YourAgent(agentConfig)
-    sessionId = "1419_7"
+    sessionId = "1419_9"
 
     # 运行agent
     yourAgent.run(sessionId=sessionId)
