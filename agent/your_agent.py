@@ -38,7 +38,7 @@ class YourAgent:
         self.stateGraph = compileGraph(self.connectionPool)
         self.sessionId = ""
 
-    def run(self, sessionId: str):
+    def runCli(self, sessionId: str):
         # 服务结束前优雅关闭agent
         def cleanUp():
             # 关闭agent
@@ -52,6 +52,9 @@ class YourAgent:
             except KeyboardInterrupt:
                 print("\n【agent】正在停止运行...")
                 break
+
+    def singleRun(self, sessionId: str) -> str:
+        return self.__run(sessionId=sessionId)
 
     def __run(self, sessionId:str) -> str:
         """
