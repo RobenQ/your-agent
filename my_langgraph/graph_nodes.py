@@ -12,7 +12,12 @@ __autoApproveFlag__ = "__auto_approve__"
 
 # 系统进入节点，在用户输入前给一个系统消息
 def sys_in_node(state: YourAgentState) -> YourAgentState:
-    interruptResult = interrupt("【Agent】please enter your question：")
+    interruptResult = ""
+    if "intputStr" in state and state["intputStr"].strip() != "":
+        interruptResult = state["intputStr"]
+        print(f'【You】:{interruptResult}')
+    while interruptResult == "":
+        interruptResult = interrupt("【Agent】please enter your question：")
     humanMsg = HumanMessage(content=interruptResult)
     return YourAgentState(messages=[humanMsg],intputStr=interruptResult)
 

@@ -39,7 +39,7 @@ class YourAgent:
         self.stateGraph = compileGraph(self.connectionPool)
         self.sessionId = ""
 
-    def runCli(self, sessionId: str):
+    def runCli(self, sessionId: str, userMsg:str|None = ""):
         # 服务结束前优雅关闭agent
         def cleanUp():
             # 关闭agent
@@ -49,15 +49,16 @@ class YourAgent:
         while True:
             # 运行agent
             try:
-                self.__run(sessionId=sessionId)
+                self.__run(sessionId=sessionId, userMsg=userMsg)
+                userMsg = ""
             except KeyboardInterrupt:
                 print("\n【agent】正在停止运行...")
                 break
 
-    def singleRun(self, sessionId: str) -> str:
-        return self.__run(sessionId=sessionId)
+    def singleRun(self, sessionId: str, userMsg:str|None = "") -> str:
+        return self.__run(sessionId=sessionId, userMsg=userMsg)
 
-    def __run(self, sessionId:str) -> str:
+    def __run(self, sessionId:str, userMsg:str|None = "") -> str:
         """
         run agent
         """
@@ -73,7 +74,7 @@ class YourAgent:
             config = self.__getLastestNodeConfig(config)
             config["configurable"]["user_config"] = self.config
         else:
-            initState = YourAgentState(intputStr="", outPutStr="")
+            initState = YourAgentState(intputStr=userMsg, outPutStr="")
         result = self.stateGraph.invoke(initState, config=config)
         while "__interrupt__" in result:
             interruptObj = result["__interrupt__"][0]
@@ -108,7 +109,7 @@ class YourAgent:
                     return True
             return False
 
-        return True
+        return True and state.next[0] != "sys_in_node"
 
     def __isNewSession(self, config: RunnableConfig):
         """

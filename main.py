@@ -17,4 +17,4 @@ if __name__ == '__main__':
     sessionId = "1419_10"
 
     # 运行agent
-    yourAgent.runCli(sessionId)
+    yourAgent.runCli(sessionId, "你可以做什么")
