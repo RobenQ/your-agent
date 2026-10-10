@@ -1,3 +1,4 @@
+import atexit
 from typing import Sequence, Any, Callable
 
 from langchain_core.runnables import RunnableConfig
@@ -18,6 +19,7 @@ class AgentConfig:
     def __init__(self, postgresqlUrl: str, tools: list,  mcpServiceConfig: dict):
         self.postgresqlUrl = postgresqlUrl
         self.tools = []
+        self.mcpServiceConfig = mcpServiceConfig
         if tools is not None:
             self.tools = tools
         if mcpServiceConfig is not None:
@@ -36,7 +38,22 @@ class YourAgent:
         self.stateGraph = compileGraph(self.connectionPool)
         self.sessionId = ""
 
-    def run(self, sessionId:str) -> str:
+    def run(self, sessionId: str):
+        # 服务结束前优雅关闭agent
+        def cleanUp():
+            # 关闭agent
+            self.__close()
+
+        atexit.register(cleanUp)
+        while True:
+            # 运行agent
+            try:
+                self.__run(sessionId=sessionId)
+            except KeyboardInterrupt:
+                print("\n【agent】正在停止运行...")
+                break
+
+    def __run(self, sessionId:str) -> str:
         """
         run agent
         """
@@ -101,7 +118,7 @@ class YourAgent:
         prev = history[1]
         return prev.config
 
-    def close(self):
+    def __close(self):
         """
         close agent
         """

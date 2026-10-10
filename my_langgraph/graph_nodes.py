@@ -11,10 +11,9 @@ from my_langgraph.graph_state import YourAgentState
 
 # 系统进入节点，在用户输入前给一个系统消息
 def sys_in_node(state: YourAgentState) -> YourAgentState:
-    sysMsg = SystemMessage(content="你是一个数字计算小能手")
-    interruptResult = interrupt("please enter your input：")
+    interruptResult = interrupt("【Agent】please enter your question：")
     humanMsg = HumanMessage(content=interruptResult)
-    return YourAgentState(messages=[sysMsg] + [humanMsg],intputStr=interruptResult)
+    return YourAgentState(messages=[humanMsg],intputStr=interruptResult)
 
 # 大模型请求节点
 def llm_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:

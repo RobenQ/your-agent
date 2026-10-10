@@ -14,10 +14,7 @@ if __name__ == '__main__':
 
     # 初始化agent
     yourAgent = YourAgent(agentConfig)
-    sessionId = "1419_9"
+    sessionId = "1419_10"
 
     # 运行agent
-    yourAgent.run(sessionId=sessionId)
-
-    # 关闭postgresql线程池
-    yourAgent.close()
+    yourAgent.run(sessionId)
