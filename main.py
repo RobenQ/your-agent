@@ -10,7 +10,7 @@ if __name__ == '__main__':
             "transport": "streamable_http"
         }
     }
-    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, tools=tools.custom_tools, mcpServiceConfig=mcpServerConfig)
+    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, tools=tools.custom_tools, mcpServiceConfig=mcpServerConfig, autoApprove=True)
 
     # 初始化agent
     yourAgent = YourAgent(agentConfig)

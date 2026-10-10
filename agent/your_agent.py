@@ -16,10 +16,11 @@ class AgentConfig:
     """
     agent config
     """
-    def __init__(self, postgresqlUrl: str, tools: list,  mcpServiceConfig: dict):
+    def __init__(self, postgresqlUrl: str, tools: list,  mcpServiceConfig: dict, autoApprove: bool | None = False):
         self.postgresqlUrl = postgresqlUrl
         self.tools = []
         self.mcpServiceConfig = mcpServiceConfig
+        self.autoApprove = autoApprove
         if tools is not None:
             self.tools = tools
         if mcpServiceConfig is not None:

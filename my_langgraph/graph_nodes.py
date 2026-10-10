@@ -8,6 +8,7 @@ from langgraph.types import interrupt
 from llm.deepseek import LLM
 from my_langgraph.graph_state import YourAgentState
 
+__autoApproveFlag__ = "__auto_approve__"
 
 # 系统进入节点，在用户输入前给一个系统消息
 def sys_in_node(state: YourAgentState) -> YourAgentState:
@@ -31,7 +32,15 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
         # print("不需要工具调用")
         return state
     tool_names = [call["name"] for call in last_msg.tool_calls]
-    interruptResult = interrupt(f'【Agent】:I will call the tool {tool_names} ，continue？【y/n】：')
+
+    # 工具调用审批
+    interruptResult = __autoApproveFlag__
+    approveMsg = f'【Agent】:I will call the tool {tool_names} ，continue？【y/n】：'
+    if not userConfig.autoApprove:
+        interruptResult = interrupt(approveMsg).lower()
+    while interruptResult != __autoApproveFlag__ and interruptResult != "n" and interruptResult != "y" :
+        interruptResult = interrupt(approveMsg).lower()
+
     toolRes = []
     # print(f'需要调用的工具列表：{last_msg.tool_calls}')
     for call in last_msg.tool_calls:
