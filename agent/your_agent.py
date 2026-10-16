@@ -1,9 +1,14 @@
+import asyncio
 import atexit
+import json
+from sys import prefix
 from typing import Sequence, Any, Callable
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
+from langchain_skillkit import SkillKit
 from langgraph.types import Command
+from orjson import orjson
 from psycopg_pool import ConnectionPool
 
 from llm.deepseek import LLM
@@ -11,23 +16,51 @@ from mcp_client.langchain_mcp_client import YourMcpClient
 from my_langgraph.graph_state import YourAgentState
 from my_langgraph.state_graph import compileGraph
 
+__defaultSkillDir__ = "./skill"
 
 class AgentConfig:
     """
     agent config
     """
-    def __init__(self, postgresqlUrl: str, tools: list,  mcpServiceConfig: dict, autoApprove: bool | None = False):
+    def __init__(self, postgresqlUrl: str|None = None,
+                 localTools: list|None = None,
+                 mcpServiceConfig: dict| None = None,
+                 autoApprove: bool|None = False,
+                 skillPath: str|None = None):
         self.postgresqlUrl = postgresqlUrl
-        self.tools = []
+        self.localTools = localTools
         self.mcpServiceConfig = mcpServiceConfig
+        self.mcpTools = []
         self.autoApprove = autoApprove
-        if tools is not None:
-            self.tools = tools
-        if mcpServiceConfig is not None:
-            remoteTools = YourMcpClient(mcpServiceConfig).getTools()
-            self.tools = self.tools + remoteTools
+
+        if skillPath is None or skillPath == "":
+            skillPath = __defaultSkillDir__
+        self.skillPath = skillPath
+
+        self.tools = []
+        self.mcpClient = None
+        self.skillKit = None
+        self.skillTools = []
+        self.toolsByName = dict
+        self.model = None
+
+    def Init(self):
+        if self.localTools is not None:
+            self.tools = self.tools + self.localTools
+
+        if self.mcpServiceConfig is not None:
+            self.mcpClient = YourMcpClient(self.mcpServiceConfig)
+            self.mcpTools = self.mcpClient.getTools()
+            self.tools = self.tools +  self.mcpTools
+
+        self.skillKit = SkillKit(self.skillPath)
+        self.skillTools = self.skillKit.tools
+        if self.skillTools is not None:
+            self.tools = self.tools + self.skillTools
         self.toolsByName = {tool.name: tool for tool in self.tools}
         self.model = LLM(tools=self.tools)
+        return self
+
 
 class YourAgent:
     def __init__(self, config: AgentConfig):
@@ -38,8 +71,78 @@ class YourAgent:
         self.connectionPool = ConnectionPool(conninfo=self.config.postgresqlUrl, max_size=10)
         self.stateGraph = compileGraph(self.connectionPool)
         self.sessionId = ""
+    def streamingRun(self):
+        # 服务结束前优雅关闭agent
+        def cleanUp():
+            # 关闭agent
+            self.__close()
 
-    def runCli(self, sessionId: str, userMsg:str|None = ""):
+        atexit.register(cleanUp)
+
+    def cliStreamRun(self, sessionId:str, userMsg:str|None = ""):
+        # 服务结束前优雅关闭agent
+        def cleanUp():
+            # 关闭agent
+            self.__close()
+
+        atexit.register(cleanUp)
+        while True:
+            # 运行agent
+            try:
+                self.__stream_run(sessionId=sessionId, userMsg=userMsg)
+                userMsg = ""
+            except KeyboardInterrupt:
+                print("\n【Agent】正在停止运行...")
+                break
+
+    def singleStreamRun(self, sessionId:str, userMsg:str|None = ""):
+        # 服务结束前优雅关闭agent
+        def cleanUp():
+            # 关闭agent
+            self.__close()
+
+        atexit.register(cleanUp)
+        self.__stream_run(sessionId=sessionId, userMsg=userMsg)
+
+    def __stream_run(self, sessionId:str, userMsg: str | None = "") -> str:
+        """
+        run agent by stream
+        """
+        self.sessionId = sessionId
+        config = RunnableConfig(configurable={
+            "thread_id": sessionId,
+            "user_config": self.config,
+        })
+        # 上次执行结束如果是异常结束，此次重新执行异常节点（重放），如果是正常结束，则重更新执行
+        errEnd = self.__checkIfErrEnd(config)
+        initState = None
+        if errEnd:
+            config = self.__getLastestNodeConfig(config)
+            config["configurable"]["user_config"] = self.config
+        else:
+            initState = YourAgentState(intputStr=userMsg, outPutStr="")
+
+        events = self.stateGraph.stream_events(initState, config=config, version="v3")
+        for message in events.messages:
+            if message.node != "llm_node":
+                continue
+            print("【Agent】")
+            print(message.text, end="\n", flush=True)
+        while events.interrupted:
+            approveResult = input(f'【Agent】\n{events.interrupts[0].value}')
+            events = self.stateGraph.stream_events(Command(resume=approveResult), config=config, version="v3")
+            # print("【Agent】", end="\n", flush=True)
+            for message in events.messages:
+                if message.node != "llm_node" :
+                    continue
+                print("【Agent】")
+                print(message.text, end="\n", flush=True)
+
+        agentOutput = events.output["outPutStr"][-1]["text"]
+        # print(f'【Agent】:\n{agentOutput}')
+        return agentOutput
+
+    def cliRun(self, sessionId: str, userMsg:str|None = ""):
         # 服务结束前优雅关闭agent
         def cleanUp():
             # 关闭agent
@@ -52,10 +155,16 @@ class YourAgent:
                 self.__run(sessionId=sessionId, userMsg=userMsg)
                 userMsg = ""
             except KeyboardInterrupt:
-                print("\n【agent】正在停止运行...")
+                print("\n【Agent】正在停止运行...")
                 break
 
     def singleRun(self, sessionId: str, userMsg:str|None = "") -> str:
+        # 服务结束前优雅关闭agent
+        def cleanUp():
+            # 关闭agent
+            self.__close()
+
+        atexit.register(cleanUp)
         return self.__run(sessionId=sessionId, userMsg=userMsg)
 
     def __run(self, sessionId:str, userMsg:str|None = "") -> str:
@@ -80,9 +189,12 @@ class YourAgent:
             interruptObj = result["__interrupt__"][0]
             approveResult = interruptObj.value
             userActionFlag = input(f'{approveResult}')
-            print(f'【You】：{userActionFlag}')
+            # print(f'【You】：{userActionFlag}')
             result = self.__resume(resumeResult=userActionFlag)
-        return result["outPutStr"]
+
+        agentOutput = result["outPutStr"]
+        print(f'【Agent】:\n{agentOutput}')
+        return agentOutput
 
     def __resume(self, resumeResult:str):
         """

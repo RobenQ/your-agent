@@ -15,9 +15,9 @@ def sys_in_node(state: YourAgentState) -> YourAgentState:
     interruptResult = ""
     if "intputStr" in state and state["intputStr"].strip() != "":
         interruptResult = state["intputStr"]
-        print(f'【You】:{interruptResult}')
+        # print(f'【You】:{interruptResult}')
     while interruptResult == "":
-        interruptResult = interrupt("【Agent】please enter your question：")
+        interruptResult = interrupt("please enter your question：")
     humanMsg = HumanMessage(content=interruptResult)
     return YourAgentState(messages=[humanMsg],intputStr=interruptResult)
 
@@ -40,7 +40,7 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
 
     # 工具调用审批
     interruptResult = __autoApproveFlag__
-    approveMsg = f'【Agent】:I will call the tool {tool_names} ，continue？【y/n】：'
+    approveMsg = f'I will call the tool {tool_names} ，continue？【y/n】：'
     if not userConfig.autoApprove:
         interruptResult = interrupt(approveMsg).lower()
     while interruptResult != __autoApproveFlag__ and interruptResult != "n" and interruptResult != "y" :
@@ -56,14 +56,15 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
             continue
         tool = userConfig.toolsByName[toolName]
         observation = asyncio.run(tool.ainvoke(call["args"]))
-        print(f'【Agent】:call the tool：{call["name"]}， result：{observation}')
+        # if toolName not in ["Skill", "SkillRead"]:
+        #     print(f'【Agent】:call the tool：{call["name"]}， result：{observation}')
         toolRes.append(ToolMessage(content=observation, tool_call_id=call["id"]))
     return MessagesState(messages=toolRes)
 
 # 系统输出节点
 def sys_out_node(state: YourAgentState) -> YourAgentState:
     last_content = state["messages"][-1].content
-    print(f'【Agent】：{last_content}')
+    # print(f'【Agent】：\n{last_content}')
     endState = YourAgentState(outPutStr=last_content)
     # print(f'end MessagesState：{endState}')
     return endState

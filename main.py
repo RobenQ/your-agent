@@ -1,3 +1,5 @@
+import asyncio
+
 from agent.your_agent import AgentConfig, YourAgent
 from tools import tools
 
@@ -10,11 +12,12 @@ if __name__ == '__main__':
             "transport": "streamable_http"
         }
     }
-    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, tools=tools.custom_tools, mcpServiceConfig=mcpServerConfig, autoApprove=True)
+    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, localTools=tools.custom_tools, mcpServiceConfig=mcpServerConfig, autoApprove=False).Init()
 
     # 初始化agent
     yourAgent = YourAgent(agentConfig)
-    sessionId = "1419_10"
+    sessionId = "1419_17"
 
     # 运行agent
-    yourAgent.runCli(sessionId, "你可以做什么")
+    yourAgent.cliStreamRun(sessionId, "")
+    # asyncio.run(yourAgent.cliStreamRun(sessionId,"你好"))
