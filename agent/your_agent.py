@@ -3,6 +3,7 @@ import atexit
 import json
 from sys import prefix
 from typing import Sequence, Any, Callable
+from unittest import result
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
@@ -70,7 +71,60 @@ class YourAgent:
         self.config = config
         self.connectionPool = ConnectionPool(conninfo=self.config.postgresqlUrl, max_size=10)
         self.stateGraph = compileGraph(self.connectionPool)
-        self.sessionId = ""
+
+    def webRun(self, sessionId: str, opType: str, userMsg: str | None = "") -> dict:
+        config = RunnableConfig(configurable={
+            "thread_id": sessionId,
+            "user_config": self.config,
+        })
+        # 上次执行结束如果是异常结束，此次重新执行异常节点（重放），如果是正常结束，则重更新执行
+        errEnd = self.__checkIfErrEnd(config)
+        initState = None
+        if errEnd:
+            config = self.__getLastestNodeConfig(config)
+            config["configurable"]["user_config"] = self.config
+        else:
+            initState = YourAgentState(intputStr=userMsg, outPutStr="")
+        result: dict
+        if opType == "interrupt":
+            result = self.__resume(sessionId= sessionId, resumeResult=userMsg)
+        else:
+            result = self.stateGraph.invoke(initState, config=config)
+        if "__interrupt__" in result:
+            interruptObj = result["__interrupt__"][0]
+            interruptMsg = interruptObj.value
+            return {"type":"interrupt","role":"system", "opType":"interrupt", "content": interruptMsg}
+
+        agentOutput = result["outPutStr"]
+        return {"type":"message", "role":"agent", "opType":"message", "content": agentOutput}
+
+    def webHistory(self, sessionId: str):
+        config = RunnableConfig(configurable={
+            "thread_id": sessionId,
+            "user_config": self.config,
+        })
+        # return self.__getStateHistory(config)
+        finalState = self.stateGraph.get_state(config)
+        messages = finalState.values["messages"]
+        return self.__formatMessages(messages)
+
+    def __formatMessages(self, messages: list) -> list:
+        res = []
+        for message in messages:
+            msgType = message.type
+            content = message.content
+            if msgType == "human":
+                res.append({"role": msgType, "content": content})
+            elif msgType == "ai":
+                if len(message.tool_calls) > 0:
+                    tool_calls = message.tool_calls
+                    res.append({"role": msgType, "content": content, "tool_calls": tool_calls})
+                else:
+                    res.append({"role": msgType, "content": content})
+            elif msgType == "tool":
+                res.append({"role": msgType, "content": content})
+        return res
+
     def streamingRun(self):
         # 服务结束前优雅关闭agent
         def cleanUp():
@@ -89,26 +143,24 @@ class YourAgent:
         while True:
             # 运行agent
             try:
-                self.__stream_run(sessionId=sessionId, userMsg=userMsg)
+                self.__streamRun(sessionId=sessionId, userMsg=userMsg)
                 userMsg = ""
             except KeyboardInterrupt:
                 print("\n【Agent】正在停止运行...")
                 break
 
-    def singleStreamRun(self, sessionId:str, userMsg:str|None = ""):
+    def singleStreamRun(self, sessionId:str, userMsg:str|None = "") -> str:
         # 服务结束前优雅关闭agent
         def cleanUp():
             # 关闭agent
             self.__close()
-
         atexit.register(cleanUp)
-        self.__stream_run(sessionId=sessionId, userMsg=userMsg)
+        return self.__streamRun(sessionId=sessionId, userMsg=userMsg)
 
-    def __stream_run(self, sessionId:str, userMsg: str | None = "") -> str:
+    def __streamRun(self, sessionId:str, userMsg: str | None = "") -> str:
         """
         run agent by stream
         """
-        self.sessionId = sessionId
         config = RunnableConfig(configurable={
             "thread_id": sessionId,
             "user_config": self.config,
@@ -171,7 +223,6 @@ class YourAgent:
         """
         run agent
         """
-        self.sessionId = sessionId
         config = RunnableConfig(configurable={
             "thread_id": sessionId,
             "user_config": self.config,
@@ -190,18 +241,18 @@ class YourAgent:
             approveResult = interruptObj.value
             userActionFlag = input(f'{approveResult}')
             # print(f'【You】：{userActionFlag}')
-            result = self.__resume(resumeResult=userActionFlag)
+            result = self.__resume(sessionId=sessionId, resumeResult=userActionFlag)
 
         agentOutput = result["outPutStr"]
         print(f'【Agent】:\n{agentOutput}')
         return agentOutput
 
-    def __resume(self, resumeResult:str):
+    def __resume(self, sessionId:str, resumeResult:str):
         """
         resume agent ,it is a private method
         """
         config = RunnableConfig(configurable={
-            "thread_id": self.sessionId,
+            "thread_id": sessionId,
             "user_config": self.config,
         })
         result = self.stateGraph.invoke(Command(resume=resumeResult), config=config)
@@ -231,9 +282,18 @@ class YourAgent:
         return checkpoint_tuple is None
 
     def __getLastestNodeConfig(self, config: RunnableConfig) -> RunnableConfig:
-        history = list(self.stateGraph.get_state_history(config))
+        history = list(self.__getStateHistory(config))
         prev = history[1]
         return prev.config
+
+    def __getStateHistory(self, config: RunnableConfig):
+       return list(self.stateGraph.get_state_history(config))
+
+    def close(self):
+        """
+        close agent
+        """
+        self.__close()
 
     def __close(self):
         """

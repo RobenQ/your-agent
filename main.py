@@ -1,23 +1,4 @@
-import asyncio
-
-from agent.your_agent import AgentConfig, YourAgent
-from tools import tools
+from server.web_server import ApiServer, apiServer
 
 if __name__ == '__main__':
-    # 初始化agent config
-    postgresqlUrl = "postgresql://postgres:123456@localhost:5432/langgraph?sslmode=disable"
-    mcpServerConfig = {
-        "caculator-mcp-server":{
-            "url": "http://localhost:8080/mcp",
-            "transport": "streamable_http"
-        }
-    }
-    agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, localTools=tools.custom_tools, mcpServiceConfig=mcpServerConfig, autoApprove=False).Init()
-
-    # 初始化agent
-    yourAgent = YourAgent(agentConfig)
-    sessionId = "1419_17"
-
-    # 运行agent
-    yourAgent.cliStreamRun(sessionId, "")
-    # asyncio.run(yourAgent.cliStreamRun(sessionId,"你好"))
+    apiServer.run()
