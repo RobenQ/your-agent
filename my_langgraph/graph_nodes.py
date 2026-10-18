@@ -41,10 +41,11 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
     # 工具调用审批
     interruptResult = __autoApproveFlag__
     approveMsg = f'I will call the tool {tool_names} ，continue？【y/n】：'
-    if not userConfig.autoApprove:
-        interruptResult = interrupt(approveMsg).lower()
-    while interruptResult != __autoApproveFlag__ and interruptResult != "n" and interruptResult != "y" :
-        interruptResult = interrupt(approveMsg).lower()
+    if len(tool_names) > 1 or "Skill" not in tool_names:
+        if not userConfig.autoApprove:
+            interruptResult = interrupt(approveMsg).lower()
+        while interruptResult != __autoApproveFlag__ and interruptResult != "n" and interruptResult != "y" :
+            interruptResult = interrupt(approveMsg).lower()
 
     toolRes = []
     # print(f'需要调用的工具列表：{last_msg.tool_calls}')
