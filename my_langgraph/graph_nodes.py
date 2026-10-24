@@ -2,10 +2,10 @@ import asyncio
 
 from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_stream_writer
 from langgraph.graph import MessagesState
 from langgraph.types import interrupt
 
-from llm.deepseek import LLM
 from my_langgraph.graph_state import YourAgentState
 
 __autoApproveFlag__ = "__auto_approve__"
@@ -38,6 +38,7 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
         return state
     tool_names = [call["name"] for call in last_msg.tool_calls]
 
+    writer = get_stream_writer()
     # 工具调用审批
     interruptResult = __autoApproveFlag__
     approveMsg = f'I will call the tool {tool_names} ，continue？【y/n】：'
@@ -56,9 +57,36 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
             toolRes.append(ToolMessage(content="工具调用未授权", tool_call_id=call["id"]))
             continue
         tool = userConfig.toolsByName[toolName]
-        observation = asyncio.run(tool.ainvoke(call["args"]))
-        # if toolName not in ["Skill", "SkillRead"]:
-        #     print(f'【Agent】:call the tool：{call["name"]}， result：{observation}')
+        # ---- 工具执行前：写 tool_start ----
+        writer({
+            "event": "tool_call",
+            "type":"tool_start",
+            "id": call["id"],
+            "name": toolName,
+            "args": call["args"],
+        })
+        tool = userConfig.toolsByName[toolName]
+        try:
+            observation = asyncio.run(tool.ainvoke(call["args"]))
+            # ---- 工具执行后：写 tool_end ----
+            writer({
+                "event": "tool_call",
+                "type": "tool_end",
+                "id": call["id"],
+                "name": toolName,
+                "status": "completed",
+                "output": observation,
+            })
+        except Exception as e:
+            writer({
+                "event": "tool_call",
+                "type": "tool_end",
+                "id": call["id"],
+                "name": toolName,
+                "status": "error",
+                "output": str(e),
+            })
+            observation = f"工具执行失败: {e}"
         toolRes.append(ToolMessage(content=observation, tool_call_id=call["id"]))
     return MessagesState(messages=toolRes)
 

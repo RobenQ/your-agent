@@ -17,3 +17,9 @@ class ResumeRequest(BaseModel):
     thread_id: str
     resume: str
     interrupt_id: Optional[str] = None
+
+
+class HistoryRequest(BaseModel):
+    sessionId: str
+    limit: int = 100
+    offset: int = 0

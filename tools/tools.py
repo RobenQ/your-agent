@@ -40,7 +40,7 @@ def customInterrupt() -> str:
     """
     approveMsg = f'continue？【y/n】：'
     interruptResult = interrupt(approveMsg).lower()
-    if interruptResult == "y":
+    if interruptResult != "y":
         return "审批不通过"
     return "审批通过"
 

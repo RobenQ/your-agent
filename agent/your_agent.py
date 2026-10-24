@@ -8,11 +8,14 @@ from unittest import result
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool
 from langchain_skillkit import SkillKit
+from langgraph.stream import CustomTransformer
 from langgraph.types import Command
 from orjson import orjson
 from psycopg_pool import ConnectionPool
 
-from llm.deepseek import LLM
+from llm.deepseek import deepseekLLM
+from llm.model import LLM
+from llm.ollama import ollamaLLM
 from mcp_client.langchain_mcp_client import YourMcpClient
 from my_langgraph.graph_state import YourAgentState
 from my_langgraph.state_graph import compileGraph
@@ -59,7 +62,7 @@ class AgentConfig:
         if self.skillTools is not None:
             self.tools = self.tools + self.skillTools
         self.toolsByName = {tool.name: tool for tool in self.tools}
-        self.model = LLM(tools=self.tools)
+        self.model = LLM(llmModel=deepseekLLM, tools=self.tools)
         return self
 
 
@@ -94,41 +97,34 @@ class YourAgent:
                     input_data = YourAgentState(intputStr=userMsg, outPutStr="")
 
             # 关键：v3 返回 run 对象，直接消费投影
-            stream = self.stateGraph.stream_events(input_data, config=config, version="v3")
-
+            stream = self.stateGraph.stream_events(input_data, config=config, version="v3", transformers=[CustomTransformer])
             # 1. 消费 LLM 消息流（token、工具调用参数）
-            for message in stream.messages:
-                # 节点名标签
-                if getattr(message, "node", None) == "sys_in_node":
+            for name, message in stream.interleave("messages", "custom"):
+                if name == "custom":
+                    if message["event"] == "tool_call":
+                        yield message
                     continue
-                if getattr(message, "node", None):
-                    yield {"type": "node", "name": message.node}
+                elif name == "messages":
+                    # 节点名标签
+                    if getattr(message, "node", None) == "sys_in_node":
+                        continue
+                    if getattr(message, "node", None):
+                        yield {"type": "node", "name": message.node}
 
-                # 流式 token
-                for delta in message.text:
-                    yield {"type": "token", "content": delta}
+                    # 流式 token
+                    for delta in message.text:
+                        yield {"type": "token", "content": delta}
+                # 2. 驱动到完成，拿最终状态（也可以直接 stream.output）
+                final_state = stream.output
 
-                # 模型生成的工具调用参数（可选推给前端）
-                finalized_calls = message.tool_calls.get()
-                if finalized_calls:
-                    for call in finalized_calls:
+                # 3. 检查中断（v3 用 stream.interrupted / stream.interrupts）
+                if stream.interrupted:
+                    for intr in stream.interrupts:
                         yield {
-                            "type": "tool_start",
-                            "name": call.get("name"),
-                            "input": call.get("args"),
+                            "type": "interrupt",
+                            "value": intr.value,
+                            "id": getattr(intr, "id", None) or "1",
                         }
-
-            # 2. 驱动到完成，拿最终状态（也可以直接 stream.output）
-            final_state = stream.output
-
-            # 3. 检查中断（v3 用 stream.interrupted / stream.interrupts）
-            if stream.interrupted:
-                for intr in stream.interrupts:
-                    yield {
-                        "type": "interrupt",
-                        "value": intr.value,
-                        "id": getattr(intr, "id", None) or "1",
-                    }
 
             yield {"type": "done"}
 
@@ -161,31 +157,46 @@ class YourAgent:
         agentOutput = result["outPutStr"]
         return {"type":"message", "role":"agent", "opType":"message", "content": agentOutput}
 
-    def webHistory(self, sessionId: str):
+    def webHistory(self, sessionId: str, limit: int = 100, offset: int = 0) -> list:
+        """
+        查询会话历史消息。
+        - 新会话（无 checkpoint）时返回空列表，不抛异常；
+        - 支持 limit/offset 分页。
+        """
         config = RunnableConfig(configurable={
             "thread_id": sessionId,
             "user_config": self.config,
         })
-        # return self.__getStateHistory(config)
         finalState = self.stateGraph.get_state(config)
-        messages = finalState.values["messages"]
+        messages = (finalState.values or {}).get("messages", []) if finalState else []
+        if offset:
+            messages = messages[offset:]
+        if limit is not None and limit >= 0:
+            messages = messages[:limit]
         return self.__formatMessages(messages)
 
     def __formatMessages(self, messages: list) -> list:
         res = []
         for message in messages:
-            msgType = message.type
-            content = message.content
+            msgType = getattr(message, "type", None)
+            content = getattr(message, "content", "")
             if msgType == "human":
                 res.append({"role": msgType, "content": content})
             elif msgType == "ai":
-                if len(message.tool_calls) > 0:
-                    tool_calls = message.tool_calls
-                    res.append({"role": msgType, "content": content, "tool_calls": tool_calls})
-                else:
-                    res.append({"role": msgType, "content": content})
+                tool_calls = getattr(message, "tool_calls", None) or []
+                item = {"role": msgType, "content": content}
+                if tool_calls:
+                    item["tool_calls"] = tool_calls
+                res.append(item)
             elif msgType == "tool":
-                res.append({"role": msgType, "content": content})
+                item = {"role": msgType, "content": content}
+                tool_call_id = getattr(message, "tool_call_id", None)
+                name = getattr(message, "name", None)
+                if tool_call_id:
+                    item["tool_call_id"] = tool_call_id
+                if name:
+                    item["name"] = name
+                res.append(item)
         return res
 
     def streamingRun(self):

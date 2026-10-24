@@ -2,11 +2,11 @@ import atexit
 import json
 
 import uvicorn
-from fastapi import FastAPI, Depends, Request
+from fastapi import FastAPI, Depends, Request, HTTPException
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from agent.request import AgentInvokeRequest, ChatRequest, ResumeRequest
+from agent.request import AgentInvokeRequest, ChatRequest, ResumeRequest, HistoryRequest
 from agent.your_agent import AgentConfig, YourAgent
 from tools import tools
 
@@ -27,9 +27,14 @@ class ApiServer:
                 "url": "http://localhost:8080/mcp",
                 "transport": "streamable_http"
             },
-            "filesystem": {
+            "file-your-agent": {
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/PyCharm/agent-study"],
+                "transport": "stdio",
+            },
+            "file-your-agent-ui": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/Hbuilder/your-agent-ui"],
                 "transport": "stdio",
             }
         }
@@ -52,6 +57,17 @@ class ApiServer:
 apiServer = ApiServer()
 def getApiServer()->ApiServer:
     return apiServer
+
+# @apiServer.server.post("/chat/test")
+# def chat_invoke(req: ChatRequest, server: ApiServer= Depends(getApiServer)):
+#     resp = server.yourAgent.test(req.thread_id, "message", req.message)
+#     # return {"session_id": req.sessionId, "role":resp["role"], "opType":resp["opType"], "content":resp["content"] }
+#     # content = resp["content"]
+#     # interruptId = "1"
+#     # if resp["opType"] == "interrupt" :
+#     #     interruptContent = resp["content"]
+#     #     return {"interrupt": {"value": interruptContent, "interrupt_id": interruptId}}
+#     return {"content": "test"}
 
 @apiServer.server.post("/chat/invoke_stream")
 async def chat_stream(req: ChatRequest, request: Request, server: ApiServer = Depends(getApiServer)):
@@ -92,7 +108,7 @@ async def chat_resume(req: ResumeRequest, request: Request, server: ApiServer = 
     )
 
 @apiServer.server.post("/chat/invoke")
-def read_item(req: ChatRequest, server: ApiServer= Depends(getApiServer)):
+def chat_invoke(req: ChatRequest, server: ApiServer= Depends(getApiServer)):
     resp = server.yourAgent.webRun(req.thread_id, "message", req.message)
     # return {"session_id": req.sessionId, "role":resp["role"], "opType":resp["opType"], "content":resp["content"] }
     content = resp["content"]
@@ -103,7 +119,7 @@ def read_item(req: ChatRequest, server: ApiServer= Depends(getApiServer)):
     return {"content": content}
 
 @apiServer.server.post("/chat/resume")
-def read_item(req: ResumeRequest, server: ApiServer= Depends(getApiServer)):
+def chat_resume_sync(req: ResumeRequest, server: ApiServer= Depends(getApiServer)):
     resp = server.yourAgent.webRun(req.thread_id, "interrupt", req.resume)
     content = resp["content"]
     interruptId = "1"
@@ -113,6 +129,9 @@ def read_item(req: ResumeRequest, server: ApiServer= Depends(getApiServer)):
     return {"content": content}
 
 @apiServer.server.post("/chat/history")
-def read_item(req: AgentInvokeRequest, server: ApiServer= Depends(getApiServer)):
-    resp = server.yourAgent.webHistory(req.sessionId)
-    return {"session_id": req.sessionId, "role":"system", "opType":"history", "content":resp }
+def chat_history(req: HistoryRequest, server: ApiServer = Depends(getApiServer)):
+    try:
+        messages = server.yourAgent.webHistory(req.sessionId, limit=req.limit, offset=req.offset)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取历史失败: {e}")
+    return {"session_id": req.sessionId, "messages": messages, "count": len(messages)}
