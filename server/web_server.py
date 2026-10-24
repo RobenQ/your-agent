@@ -1,7 +1,9 @@
 import atexit
+import json
 
 import uvicorn
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from agent.request import AgentInvokeRequest, ChatRequest, ResumeRequest
@@ -24,10 +26,15 @@ class ApiServer:
             "caculator-mcp-server": {
                 "url": "http://localhost:8080/mcp",
                 "transport": "streamable_http"
+            },
+            "filesystem": {
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/PyCharm/agent-study"],
+                "transport": "stdio",
             }
         }
         agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, localTools=tools.custom_tools,
-                                  mcpServiceConfig=mcpServerConfig, autoApprove=False).Init()
+                                  mcpServiceConfig=mcpServerConfig, autoApprove=True).Init()
         # 初始化agent
         yourAgent = YourAgent(agentConfig)
         self.agentConfig = agentConfig
@@ -40,11 +47,49 @@ class ApiServer:
         atexit.register(cleanUp)
 
     def run(self):
-        uvicorn.run(self.server, host="127.0.0.1", port=8090)
+        uvicorn.run(self.server, host="0.0.0.0", port=8090)
 
 apiServer = ApiServer()
 def getApiServer()->ApiServer:
     return apiServer
+
+@apiServer.server.post("/chat/invoke_stream")
+async def chat_stream(req: ChatRequest, request: Request, server: ApiServer = Depends(getApiServer)):
+    async def event_generator():
+        try:
+            async for evt in server.yourAgent.webStreamRun(sessionId=req.thread_id, opType="message", userMsg=req.message):
+                if await request.is_disconnected():
+                    break
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "X-Accel-Buffering": "no",
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+        },
+    )
+
+@apiServer.server.post("/chat/resume_stream")
+async def chat_resume(req: ResumeRequest, request: Request, server: ApiServer = Depends(getApiServer),):
+    async def event_generator():
+        try:
+            async for evt in server.yourAgent.webStreamRun(sessionId=req.thread_id, opType="interrupt", userMsg=req.resume):
+                if await request.is_disconnected():
+                    break
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
 
 @apiServer.server.post("/chat/invoke")
 def read_item(req: ChatRequest, server: ApiServer= Depends(getApiServer)):

@@ -1,4 +1,6 @@
 from langchain_core.tools import tool
+from langgraph.types import interrupt
+
 
 # 工具定义
 @tool
@@ -30,8 +32,17 @@ def divide(a: int, b: int) -> float:
         b: Second int
     """
     return a / b
-# 工具集合
-custom_tools = []
 
-# 工具名称的集合
-tools_by_name = {tool.name: tool for tool in custom_tools}
+@tool
+def customInterrupt() -> str:
+    """
+    中断方法，当用户要求审批某些动作时调用
+    """
+    approveMsg = f'continue？【y/n】：'
+    interruptResult = interrupt(approveMsg).lower()
+    if interruptResult == "y":
+        return "审批不通过"
+    return "审批通过"
+
+# 工具集合
+custom_tools = [customInterrupt]

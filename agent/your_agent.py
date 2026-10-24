@@ -2,7 +2,7 @@ import asyncio
 import atexit
 import json
 from sys import prefix
-from typing import Sequence, Any, Callable
+from typing import Sequence, Any, Callable, AsyncGenerator
 from unittest import result
 
 from langchain_core.runnables import RunnableConfig
@@ -71,6 +71,69 @@ class YourAgent:
         self.config = config
         self.connectionPool = ConnectionPool(conninfo=self.config.postgresqlUrl, max_size=10)
         self.stateGraph = compileGraph(self.connectionPool)
+
+    async def webStreamRun(self, sessionId: str, opType: str, userMsg: str | None = "") -> AsyncGenerator[dict, None]:
+        """
+        流式执行 Agent，产出前端事件字典（v3 投影模式）。
+        """
+        config = RunnableConfig(configurable={
+            "thread_id": sessionId,
+            "user_config": self.config,
+        })
+
+        try:
+            if opType == "interrupt":
+                input_data = Command(resume=userMsg)
+            else:
+                errEnd = self.__checkIfErrEnd(config)
+                if errEnd:
+                    config = self.__getLastestNodeConfig(config)
+                    config["configurable"]["user_config"] = self.config
+                    input_data = None
+                else:
+                    input_data = YourAgentState(intputStr=userMsg, outPutStr="")
+
+            # 关键：v3 返回 run 对象，直接消费投影
+            stream = self.stateGraph.stream_events(input_data, config=config, version="v3")
+
+            # 1. 消费 LLM 消息流（token、工具调用参数）
+            for message in stream.messages:
+                # 节点名标签
+                if getattr(message, "node", None) == "sys_in_node":
+                    continue
+                if getattr(message, "node", None):
+                    yield {"type": "node", "name": message.node}
+
+                # 流式 token
+                for delta in message.text:
+                    yield {"type": "token", "content": delta}
+
+                # 模型生成的工具调用参数（可选推给前端）
+                finalized_calls = message.tool_calls.get()
+                if finalized_calls:
+                    for call in finalized_calls:
+                        yield {
+                            "type": "tool_start",
+                            "name": call.get("name"),
+                            "input": call.get("args"),
+                        }
+
+            # 2. 驱动到完成，拿最终状态（也可以直接 stream.output）
+            final_state = stream.output
+
+            # 3. 检查中断（v3 用 stream.interrupted / stream.interrupts）
+            if stream.interrupted:
+                for intr in stream.interrupts:
+                    yield {
+                        "type": "interrupt",
+                        "value": intr.value,
+                        "id": getattr(intr, "id", None) or "1",
+                    }
+
+            yield {"type": "done"}
+
+        except Exception as e:
+            yield {"type": "error", "message": str(e)}
 
     def webRun(self, sessionId: str, opType: str, userMsg: str | None = "") -> dict:
         config = RunnableConfig(configurable={
