@@ -42,8 +42,8 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
     # 工具调用审批
     interruptResult = __autoApproveFlag__
     approveMsg = f'I will call the tool {tool_names} ，continue？【y/n】：'
-    if (len(tool_names) > 1 or "Skill" not in tool_names) and "customInterrupt" not in tool_names:
-        if not userConfig.autoApprove:
+    if len(tool_names) > 1 or "Skill" not in tool_names :
+        if "customInterrupt" in tool_names or userConfig.autoApprove is False :
             interruptResult = interrupt(approveMsg).lower()
         while interruptResult != __autoApproveFlag__ and interruptResult != "n" and interruptResult != "y" :
             interruptResult = interrupt(approveMsg).lower()
@@ -52,19 +52,26 @@ def tool_node(state: YourAgentState, config: RunnableConfig) -> YourAgentState:
     # print(f'需要调用的工具列表：{last_msg.tool_calls}')
     for call in last_msg.tool_calls:
         toolName = call["name"]
-        # print(f'用户审批结果：{interruptResult}')
-        if "n" == str(interruptResult).lower():
-            toolRes.append(ToolMessage(content="工具调用未授权", tool_call_id=call["id"]))
-            continue
-        tool = userConfig.toolsByName[toolName]
-        # ---- 工具执行前：写 tool_start ----
         writer({
             "event": "tool_call",
-            "type":"tool_start",
+            "type": "tool_start",
             "id": call["id"],
             "name": toolName,
             "args": call["args"],
         })
+        # print(f'用户审批结果：{interruptResult}')
+        if "n" == str(interruptResult).lower():
+            writer({
+                "event": "tool_call",
+                "type": "tool_end",
+                "id": call["id"],
+                "name": toolName,
+                "status": "completed",
+                "output": "工具调用未授权",
+            })
+            toolRes.append(ToolMessage(content="工具调用未授权", tool_call_id=call["id"]))
+            continue
+        # ---- 工具执行前：写 tool_start ----
         tool = userConfig.toolsByName[toolName]
         try:
             observation = asyncio.run(tool.ainvoke(call["args"]))

@@ -1,3 +1,4 @@
+import asyncio
 import atexit
 import json
 
@@ -23,20 +24,35 @@ class ApiServer:
         # 初始化agent config
         postgresqlUrl = "postgresql://postgres:123456@localhost:5432/langgraph?sslmode=disable"
         mcpServerConfig = {
-            "caculator-mcp-server": {
-                "url": "http://localhost:8080/mcp",
-                "transport": "streamable_http"
-            },
-            "file-your-agent": {
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/PyCharm/agent-study"],
-                "transport": "stdio",
-            },
+            # "caculator-mcp-server": {
+            #     "url": "http://localhost:8080/mcp",
+            #     "transport": "streamable_http"
+            # },
+            # "file-your-agent": {
+            #     "command": "npx",
+            #     "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/PyCharm/agent-study"],
+            #     "transport": "stdio",
+            # },
             "file-your-agent-ui": {
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/Hbuilder/your-agent-ui"],
                 "transport": "stdio",
-            }
+                "env": {
+                    "LANG": "zh_CN.UTF-8",
+                    "LC_ALL": "zh_CN.UTF-8",
+                    "LC_CTYPE": "zh_CN.UTF-8",
+                },
+            },
+            "free-web-search": {
+                "command": r"E:\Application\conda_envs\agent-study\Scripts\uvx.exe",
+                "args": ["free-search-mcp"],
+                "transport": "stdio",
+            },
+            #  "searchlight": {
+            #         "command": "python",
+            #         "args": ["-u", "-W", "ignore", "-m", "searchlight"],
+            #         "transport": "stdio",
+            # }
         }
         agentConfig = AgentConfig(postgresqlUrl=postgresqlUrl, localTools=tools.custom_tools,
                                   mcpServiceConfig=mcpServerConfig, autoApprove=True).Init()
@@ -72,13 +88,19 @@ def getApiServer()->ApiServer:
 @apiServer.server.post("/chat/invoke_stream")
 async def chat_stream(req: ChatRequest, request: Request, server: ApiServer = Depends(getApiServer)):
     async def event_generator():
+        agen = server.yourAgent.webStreamRun(sessionId=req.thread_id, opType="message", userMsg=req.message)
         try:
-            async for evt in server.yourAgent.webStreamRun(sessionId=req.thread_id, opType="message", userMsg=req.message):
+            async for evt in agen:
                 if await request.is_disconnected():
                     break
                 yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            raise  # 不要吞掉取消信号
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)}, ensure_ascii=False)}\n\n"
+        finally:
+            # 关键 2：显式关闭生成器，触发 webStreamRun 的 finally
+            await agen.aclose()
 
     return StreamingResponse(
         event_generator(),

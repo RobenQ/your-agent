@@ -62,7 +62,7 @@ class AgentConfig:
         if self.skillTools is not None:
             self.tools = self.tools + self.skillTools
         self.toolsByName = {tool.name: tool for tool in self.tools}
-        self.model = LLM(llmModel=deepseekLLM, tools=self.tools)
+        self.model = LLM(llmModel=ollamaLLM, tools=self.tools)
         return self
 
 
@@ -83,18 +83,23 @@ class YourAgent:
             "thread_id": sessionId,
             "user_config": self.config,
         })
-
+        stream = None
         try:
             if opType == "interrupt":
                 input_data = Command(resume=userMsg)
             else:
                 errEnd = self.__checkIfErrEnd(config)
                 if errEnd:
-                    config = self.__getLastestNodeConfig(config)
+                    forkConfig = self.__getLastestSysInNodeConfig(config)
+                    config = self.stateGraph.update_state(
+                        forkConfig,
+                        values= YourAgentState(intputStr=userMsg),  # 不修改状态，只是创建分叉点
+                        as_node="__start__"
+                    )
                     config["configurable"]["user_config"] = self.config
                     input_data = None
                 else:
-                    input_data = YourAgentState(intputStr=userMsg, outPutStr="")
+                    input_data = YourAgentState(intputStr=userMsg)
 
             # 关键：v3 返回 run 对象，直接消费投影
             stream = self.stateGraph.stream_events(input_data, config=config, version="v3", transformers=[CustomTransformer])
@@ -103,7 +108,6 @@ class YourAgent:
                 if name == "custom":
                     if message["event"] == "tool_call":
                         yield message
-                    continue
                 elif name == "messages":
                     # 节点名标签
                     if getattr(message, "node", None) == "sys_in_node":
@@ -111,25 +115,31 @@ class YourAgent:
                     if getattr(message, "node", None):
                         yield {"type": "node", "name": message.node}
 
+                    for delta in message.reasoning:
+                        yield {"type": "reasoning", "content": delta}
                     # 流式 token
                     for delta in message.text:
                         yield {"type": "token", "content": delta}
-                # 2. 驱动到完成，拿最终状态（也可以直接 stream.output）
-                final_state = stream.output
 
-                # 3. 检查中断（v3 用 stream.interrupted / stream.interrupts）
-                if stream.interrupted:
-                    for intr in stream.interrupts:
-                        yield {
-                            "type": "interrupt",
-                            "value": intr.value,
-                            "id": getattr(intr, "id", None) or "1",
-                        }
-
+            # 2. 循环自然退出后，流已暂停或结束，状态确定
+            final_state = stream.output  # 此时访问，拿到最终状态
+            if stream.interrupted:
+                for intr in stream.interrupts:
+                    yield {
+                        "type": "interrupt",
+                        "value": intr.value,
+                        "id": getattr(intr, "id", None) or "1",
+                    }
             yield {"type": "done"}
 
         except Exception as e:
             yield {"type": "error", "message": str(e)}
+        finally:
+            if stream is not None:
+                try:
+                    await stream.aclose()
+                except Exception:
+                    pass
 
     def webRun(self, sessionId: str, opType: str, userMsg: str | None = "") -> dict:
         config = RunnableConfig(configurable={
@@ -359,6 +369,17 @@ class YourAgent:
         history = list(self.__getStateHistory(config))
         prev = history[1]
         return prev.config
+
+    def __getLastestSysInNodeConfig(self, config: RunnableConfig) -> RunnableConfig:
+        history = list(self.__getStateHistory(config))
+
+        # 找到 next 包含第一个节点 "a" 的最新检查点
+        # 这代表本轮开始前的状态
+        lastestSysInNode = next(
+            s for s in history
+                if s.next and "sys_in_node" in s.next
+        )
+        return lastestSysInNode.config
 
     def __getStateHistory(self, config: RunnableConfig):
        return list(self.stateGraph.get_state_history(config))
