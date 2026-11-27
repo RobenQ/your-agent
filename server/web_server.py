@@ -51,7 +51,11 @@ class ApiServer:
             # },
             "free-web-search": {
                 "command": "uvx",
-                "args": ["free-search-mcp"],
+                "args": [
+                    "--with", "PySocks",
+                    "--from", "free-search-mcp==0.18.2",
+                    "free-search-mcp"
+                ],
                 "transport": "stdio",
             },
             #  "searchlight": {

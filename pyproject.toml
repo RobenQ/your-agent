@@ -16,7 +16,15 @@ dependencies = [
     "psycopg-pool==3.3.1",
     "psycopg[binary]==3.3.5",
     "pydantic==2.13.5",
+    "pysocks>=1.7.1",
     "python-dotenv==1.2.4",
+    "requests>=2.34.2",
     "searchlight-mcp==4.1.0",
     "uvicorn==0.54.0",
 ]
+#[[tool.uv.index]]
+#url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+#default = true
+[[tool.uv.index]]
+name = "tencent"
+url = "https://mirrors.aliyun.com/pypi/simple/"
