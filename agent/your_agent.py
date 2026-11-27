@@ -13,7 +13,7 @@ from langgraph.types import Command
 from orjson import orjson
 from psycopg_pool import ConnectionPool
 
-from llm.deepseek import deepseekLLM
+# from llm.deepseek import deepseekLLM
 from llm.model import LLM
 from llm.ollama import ollamaLLM
 from mcp_client.langchain_mcp_client import YourMcpClient
@@ -72,7 +72,11 @@ class YourAgent:
         init agent
         """
         self.config = config
-        self.connectionPool = ConnectionPool(conninfo=self.config.postgresqlUrl, max_size=10)
+        self.connectionPool = ConnectionPool(
+            conninfo=self.config.postgresqlUrl,
+            max_size=10,
+            kwargs={"autocommit": True, "prepare_threshold": 0},
+        )
         self.stateGraph = compileGraph(self.connectionPool)
 
     async def webStreamRun(self, sessionId: str, opType: str, userMsg: str | None = "") -> AsyncGenerator[dict, None]:
@@ -395,5 +399,4 @@ class YourAgent:
         close agent
         """
         self.connectionPool.close()
-
 

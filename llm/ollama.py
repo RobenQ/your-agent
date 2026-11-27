@@ -2,8 +2,8 @@ from langchain_ollama import ChatOllama
 from langchain_openai import ChatOpenAI
 
 ollamaLLM = ChatOllama(
-    model="qwen3-coder:30b",          # 换成你本地已有的模型名
-    base_url="http://192.168.124.27:9091",  # 默认值，可省略
+    model="qwen3.8:27b-mlx",          # 换成你本地已有的模型名
+    base_url="http://127.0.0.1:9091",  # 默认值，可省略
     # temperature=0,
     reasoning= "medium",
 )
