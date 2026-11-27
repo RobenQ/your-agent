@@ -35,7 +35,7 @@ def compileGraph(connectionPool:ConnectionPool) -> CompiledStateGraph[Any, Any, 
     # DB_URI = "postgresql://postgres:123456@localhost:5432/my_langgraph?sslmode=disable"
 
     checkpointer = PostgresSaver(connectionPool)
-    # checkpointer.setup()  # 首次运行建表，之后可省略
+    checkpointer.setup()  # 首次运行建表，之后可省略
     store = InMemoryStore()
     graph = graph.compile(checkpointer=checkpointer, store=store)
     return graph

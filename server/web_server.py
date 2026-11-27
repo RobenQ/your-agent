@@ -1,6 +1,8 @@
 import asyncio
 import atexit
 import json
+import sys
+from pathlib import Path
 
 import uvicorn
 from fastapi import FastAPI, Depends, Request, HTTPException
@@ -33,23 +35,27 @@ class ApiServer:
             #     "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/PyCharm/agent-study"],
             #     "transport": "stdio",
             # },
-            "file-your-agent-ui": {
-                "command": "npx",
-                "args": ["-y", "@modelcontextprotocol/server-filesystem", "E:/MyFiles/Program/Hbuilder/your-agent-ui"],
-                "transport": "stdio",
-                "env": {
-                    "LANG": "zh_CN.UTF-8",
-                    "LC_ALL": "zh_CN.UTF-8",
-                    "LC_CTYPE": "zh_CN.UTF-8",
-                },
-            },
+            # "file-your-agent-ui": {
+            #     "command": "npx",
+            #     "args": [
+            #         "-y",
+            #         "@modelcontextprotocol/server-filesystem",
+            #         str(Path(__file__).resolve().parents[2] / "your-agent-ui"),
+            #     ],
+            #     "transport": "stdio",
+            #     "env": {
+            #         "LANG": "zh_CN.UTF-8",
+            #         "LC_ALL": "zh_CN.UTF-8",
+            #         "LC_CTYPE": "zh_CN.UTF-8",
+            #     },
+            # },
             "free-web-search": {
-                "command": r"E:\Application\conda_envs\agent-study\Scripts\uvx.exe",
+                "command": "uvx",
                 "args": ["free-search-mcp"],
                 "transport": "stdio",
             },
             #  "searchlight": {
-            #         "command": "python",
+            #         "command": sys.executable,
             #         "args": ["-u", "-W", "ignore", "-m", "searchlight"],
             #         "transport": "stdio",
             # }
